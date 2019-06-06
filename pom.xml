@@ -21,6 +21,7 @@
         <kafka.version>2.2.0</kafka.version>
         <orc.version>1.5.5</orc.version>
         <hadoop.version>3.2.0</hadoop.version>
+        <nifi.version>1.9.2</nifi.version>
     </properties>
 
     <dependencies>
@@ -43,6 +44,11 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-aws</artifactId>
             <version>${hadoop.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.nifi</groupId>
+            <artifactId>nifi-hive-processors</artifactId>
+            <version>${nifi.version}</version>
         </dependency>
     </dependencies>
 

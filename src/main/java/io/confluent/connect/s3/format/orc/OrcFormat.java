@@ -1,4 +1,4 @@
-package io.confluent.connect.s3.format;
+package io.confluent.connect.s3.format.orc;
 
 import io.confluent.connect.avro.AvroData;
 import io.confluent.connect.s3.S3SinkConnectorConfig;
@@ -19,17 +19,17 @@ public class OrcFormat implements Format<S3SinkConnectorConfig, String> {
 
     @Override
     public RecordWriterProvider<S3SinkConnectorConfig> getRecordWriterProvider() {
-        return null;
+        return new OrcRecordWriterProvider(storage, avroData);
     }
 
     @Override
     public SchemaFileReader<S3SinkConnectorConfig, String> getSchemaFileReader() {
-        return null;
+        throw new UnsupportedOperationException("Reading schemas from S3 is not currently supported");
     }
 
     @Override
     public HiveFactory getHiveFactory() {
-        return null;
+        throw new UnsupportedOperationException("Hive integration is not currently supported in S3 Connector");
     }
 
     public AvroData getAvroData() {
