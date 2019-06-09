@@ -9,10 +9,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.s3a.S3AFileSystem;
-import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.ColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
-import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
+import org.apache.hadoop.hive.ql.exec.vector.*;
 import org.apache.hadoop.hive.ql.io.orc.NiFiOrcUtils;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -85,11 +82,16 @@ public class OrcRecordWriter implements RecordWriter {
             orcSchema = this.createOrcSchema(avroSchema);
 
             Configuration orcConfig = this.getOrcConfig();
-            FileSystem s3FileSystem = this.getS3FileSystem(orcConfig, this.connectorConfig.getBucketName());
+            try {
+                FileSystem s3FileSystem = this.getS3FileSystem(orcConfig, this.connectorConfig.getBucketName());
 
-            this.orcWriter = OrcFile.createWriter(new Path(filename + "." + EXTENSION),
-                    OrcFile.writerOptions(orcConfig).setSchema(orcSchema)
-                            .fileSystem(s3FileSystem));
+                this.orcWriter = OrcFile.createWriter(new Path(filename + "." + EXTENSION),
+                        OrcFile.writerOptions(orcConfig).setSchema(orcSchema)
+                                .fileSystem(s3FileSystem));
+            } catch (Exception ex) {
+                this.orcWriter = OrcFile.createWriter(new Path(filename + "." + EXTENSION),
+                        OrcFile.writerOptions(new Configuration()).setSchema(orcSchema));
+            }
 
             this.rowBatch = orcSchema.createRowBatch();
             this.columnVectors = this.getColumnVectors(rowBatch, orcSchema,
@@ -104,10 +106,14 @@ public class OrcRecordWriter implements RecordWriter {
         for (int count=0; count < fields.size(); count++) {
             String fieldName = fields.get(count).name();
             org.apache.avro.Schema fieldSchema = fields.get(count).schema();
-            List<org.apache.avro.Schema> typesOf = fieldSchema.getTypes();
-            String typeOf = typesOf.get(0).getType().getName();
+//            List<org.apache.avro.Schema> typesOf = fieldSchema.getTypes();
+            String typeOf = fieldSchema.getType().getName();
 
-            orcFields.append(fieldName + ":" + typeOf);
+            if (typeOf.equals("long")) {
+                orcFields.append(fieldName + ":" + "bigint");
+            } else {
+                orcFields.append(fieldName + ":" + typeOf);
+            }
 
             if (count < (fields.size() - 1)) {
                 orcFields.append(",");
@@ -122,8 +128,16 @@ public class OrcRecordWriter implements RecordWriter {
         String awsSecretKeyId = System.getenv("AWS_SECRET_ACCESS_KEY");
 
         Configuration orcConfig = new Configuration();
-        orcConfig.set("fs.s3a.access.key", awsAccessKeyId);
-        orcConfig.set("fs.s3a.secret.key", awsSecretKeyId);
+        if (awsAccessKeyId != null) {
+            orcConfig.set("fs.s3a.access.key", awsAccessKeyId);
+        } else {
+            orcConfig.set("fs.s3a.access.key", "");
+        }
+        if (awsSecretKeyId != null) {
+            orcConfig.set("fs.s3a.secret.key", awsSecretKeyId);
+        } else {
+            orcConfig.set("fs.s3a.secret.key", "");
+        }
         orcConfig.set("fs.s3a.endpoint", storage.url());
         orcConfig.set("fs.s3a.path.style.access", "true");
 
@@ -148,9 +162,16 @@ public class OrcRecordWriter implements RecordWriter {
         for (int count = 0; count < noOfFields; count++) {
             String typeOf = orcSchema.getChildren().get(count).getCategory().getName();
             switch (typeOf) {
+                case "boolean":
+                case "bigint":
                 case "int":
                     LongColumnVector longColumnVector = (LongColumnVector) rowBatch.cols[count];
                     columnVectors.add(longColumnVector);
+                    break;
+                case "double":
+                case "float":
+                    DoubleColumnVector doubleColumnVector = (DoubleColumnVector) rowBatch.cols[count];
+                    columnVectors.add(doubleColumnVector);
                     break;
                 case "string":
                     BytesColumnVector bytesColumnVector = (BytesColumnVector) rowBatch.cols[count];
@@ -175,9 +196,17 @@ public class OrcRecordWriter implements RecordWriter {
 
             String typeOf = orcSchema.getChildren().get(count).getCategory().getName();
             switch (typeOf) {
+                case "boolean":
+                    fieldValue = Boolean.valueOf(fieldValue.toString()) ? 1: 0;
+                case "bigint":
                 case "int":
                     LongColumnVector longColumnVector = (LongColumnVector) columnVectors.get(count);
-                    longColumnVector.vector[row] = Long.getLong(fieldValue.toString());
+                    longColumnVector.vector[row] = Long.valueOf(fieldValue.toString());
+                    break;
+                case "double":
+                case "float":
+                    DoubleColumnVector doubleColumnVector = (DoubleColumnVector) columnVectors.get(count);
+                    doubleColumnVector.vector[row] = Double.valueOf(fieldValue.toString());
                     break;
                 case "string":
                     BytesColumnVector bytesColumnVector = (BytesColumnVector) columnVectors.get(count);
