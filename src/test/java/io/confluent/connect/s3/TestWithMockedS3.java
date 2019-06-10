@@ -44,9 +44,10 @@ public class TestWithMockedS3 extends S3SinkConnectorTestBase {
 
     @Override
     public void setUp() throws Exception {
+        File s3mockDir = s3mockRoot.newFolder("s3-tests-" + UUID.randomUUID().toString());
+        this.s3MockDirPath = s3mockDir.getCanonicalPath();
         super.setUp();
         port = url.substring(url.lastIndexOf(":") + 1);
-        File s3mockDir = s3mockRoot.newFolder("s3-tests-" + UUID.randomUUID().toString());
         System.out.println("Create folder: " + s3mockDir.getCanonicalPath());
         s3Mock = S3Mock.create(Integer.parseInt(port), s3mockDir.getCanonicalPath());
         s3Mock.start();
@@ -54,8 +55,8 @@ public class TestWithMockedS3 extends S3SinkConnectorTestBase {
 
     @Override
     public void tearDown() throws Exception {
-        super.tearDown();
-        s3Mock.shutdown();
+ //       super.tearDown();
+ //       s3Mock.shutdown();
     }
 
     public static List<S3ObjectSummary> listObjects(String bucket, String prefix, AmazonS3 s3) {

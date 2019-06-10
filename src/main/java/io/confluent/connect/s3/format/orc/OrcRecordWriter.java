@@ -3,11 +3,13 @@ package io.confluent.connect.s3.format.orc;
 import io.confluent.connect.avro.AvroData;
 import io.confluent.connect.s3.S3SinkConnectorConfig;
 import io.confluent.connect.s3.storage.S3Storage;
+import io.confluent.connect.storage.common.StorageCommonConfig;
 import io.confluent.connect.storage.format.RecordWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.RawLocalFileSystem;
 import org.apache.hadoop.fs.s3a.S3AFileSystem;
 import org.apache.hadoop.hive.ql.exec.vector.*;
 import org.apache.hadoop.hive.ql.io.orc.NiFiOrcUtils;
@@ -45,7 +47,7 @@ public class OrcRecordWriter implements RecordWriter {
     public OrcRecordWriter(String filename, String EXTENSION,
                            AvroData avroData, S3SinkConnectorConfig connectorConfig,
                            S3Storage storage) {
-        this.filename = filename;
+        this.filename = filename.replace("#", "_");
         this.EXTENSION = EXTENSION;
         this.avroData = avroData;
         this.connectorConfig = connectorConfig;
@@ -85,12 +87,14 @@ public class OrcRecordWriter implements RecordWriter {
             try {
                 FileSystem s3FileSystem = this.getS3FileSystem(orcConfig, this.connectorConfig.getBucketName());
 
-                this.orcWriter = OrcFile.createWriter(new Path(filename + "." + EXTENSION),
+                this.orcWriter = OrcFile.createWriter(new Path(filename),
                         OrcFile.writerOptions(orcConfig).setSchema(orcSchema)
                                 .fileSystem(s3FileSystem));
             } catch (Exception ex) {
-                this.orcWriter = OrcFile.createWriter(new Path(filename + "." + EXTENSION),
-                        OrcFile.writerOptions(new Configuration()).setSchema(orcSchema));
+                this.orcWriter = OrcFile.createWriter(new Path(filename),
+                        OrcFile.writerOptions(new Configuration()).setSchema(orcSchema)
+                                .fileSystem(this.getLocalFileSystem(this.connectorConfig.originals()
+                                        .get("mock.dir.path").toString())));
             }
 
             this.rowBatch = orcSchema.createRowBatch();
@@ -152,6 +156,16 @@ public class OrcRecordWriter implements RecordWriter {
         s3FileSystem.setWorkingDirectory(new Path("/"));
 
         return s3FileSystem;
+    }
+
+    private FileSystem getLocalFileSystem(String location) throws IOException {
+        URI localUri = URI.create(location);
+
+        FileSystem localFileSystem = new RawLocalFileSystem();
+        localFileSystem.initialize(localUri, new Configuration());
+        localFileSystem.setWorkingDirectory(new Path(location + "/" +
+                this.connectorConfig.get("s3.bucket.name")));
+        return localFileSystem;
     }
 
     private List<ColumnVector> getColumnVectors(VectorizedRowBatch rowBatch,

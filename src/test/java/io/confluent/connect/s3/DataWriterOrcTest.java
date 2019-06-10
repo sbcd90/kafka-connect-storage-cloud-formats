@@ -86,7 +86,7 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
     }
 
     @Test
-    public void testUncompressedCompressionWriteRecords() throws Exception {
+    public void testUncompre2ssedCompressionWriteRecords() throws Exception {
         testWriteRecords(this.extension);
     }
 

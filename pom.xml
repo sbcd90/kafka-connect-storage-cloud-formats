@@ -39,6 +39,12 @@
             <groupId>io.confluent</groupId>
             <artifactId>kafka-connect-s3</artifactId>
             <version>${kafka.connect.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-exec</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.confluent</groupId>
@@ -64,6 +70,12 @@
             <groupId>org.apache.nifi</groupId>
             <artifactId>nifi-hive-processors</artifactId>
             <version>${nifi.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.hive</groupId>
+                    <artifactId>hive-exec</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -99,6 +111,16 @@
             <groupId>io.findify</groupId>
             <artifactId>s3mock_2.12</artifactId>
             <version>${s3mock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>23.6-jre</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpcore</artifactId>
+            <version>4.4.8</version>
         </dependency>
     </dependencies>
 
