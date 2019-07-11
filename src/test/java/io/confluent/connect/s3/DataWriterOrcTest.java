@@ -3,14 +3,17 @@ package io.confluent.connect.s3;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 import io.confluent.connect.s3.format.orc.OrcFormat;
+import io.confluent.connect.s3.format.orc.OrcUtils;
 import io.confluent.connect.s3.storage.S3Storage;
 import io.confluent.connect.s3.util.FileUtils;
 import io.confluent.connect.storage.partitioner.DefaultPartitioner;
 import io.confluent.connect.storage.partitioner.Partitioner;
 import io.confluent.kafka.serializers.NonRecordContainer;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.util.Utf8;
 import org.apache.hadoop.hive.metastore.api.FieldSchema;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaProjector;
 import org.apache.kafka.connect.data.Struct;
@@ -21,6 +24,7 @@ import org.powermock.api.mockito.PowerMockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.*;
 
@@ -48,6 +52,10 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
         Map<String, String> props = super.createProps();
         props.putAll(localProps);
         return props;
+    }
+
+    protected String getDirectory() {
+        return getDirectory(TOPIC, PARTITION);
     }
 
     public void setUp() throws Exception {
@@ -90,6 +98,36 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
         testWriteRecords(this.extension);
     }
 
+    @Test
+    public void testRecoveryWithPartialFile() throws Exception {
+        setUp();
+
+        // Upload partial file.
+        System.setProperty("com.amazonaws.services.s3.disableGetObjectMD5Validation", "true");
+        List<SinkRecord> sinkRecords = createRecords(2);
+
+        byte[] partialData = OrcUtils.putRecords(sinkRecords, format.getAvroData());
+        String fileKey = FileUtils.fileKeyToCommit(topicsDir, getDirectory(), TOPIC_PARTITION, 0, extension, ZERO_PAD_FMT);
+        s3.putObject(S3_TEST_BUCKET_NAME, fileKey, new ByteArrayInputStream(partialData), null);
+
+        // Accumulate rest of the records.
+        sinkRecords.addAll(createRecords(5, 2));
+
+        task = new S3SinkTask(connectorConfig, context, storage, partitioner, format, SYSTEM_TIME);
+        // Perform write
+        task.put(sinkRecords);
+        task.close(context.assignment());
+        task.stop();
+
+        long[] validOffsets = {0, 3, 6};
+        verify(sinkRecords, validOffsets);
+    }
+
+    protected void verify(List<SinkRecord> sinkRecords, long[] validOffsets) throws IOException {
+        verify(sinkRecords, validOffsets, Collections.singleton(new TopicPartition(TOPIC, PARTITION)),
+                false, this.extension);
+    }
+
     protected void verify(List<SinkRecord> sinkRecords, long[] validOffsets, String extension) throws IOException {
         verify(sinkRecords, validOffsets, Collections.singleton(new TopicPartition(TOPIC, PARTITION)), false, extension);
     }
@@ -100,20 +138,23 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
             verifyFileListing(validOffsets, partitions, extension);
         }
 
+        Collection<Object> records = new ArrayList<>();
         for (TopicPartition tp: partitions) {
-            for (int i=1, j=0; i < validOffsets.length; i++) {
-                long startOffset = validOffsets[i - 1];
+            for (int i=0, j=0; i < validOffsets.length; i++) {
+                long startOffset = validOffsets[i];
                 long size = validOffsets[i] - startOffset;
 
                 FileUtils.fileKeyToCommit(topicsDir, getDirectory(tp.topic(), tp.partition()),
                         tp, startOffset, extension, ZERO_PAD_FMT);
-                Collection<Object> records = readRecords(topicsDir, getDirectory(tp.topic(), tp.partition()), tp, startOffset,
-                        extension, ZERO_PAD_FMT, S3_TEST_BUCKET_NAME, s3);
-                assertEquals(size, records.size());
-                verifyContents(sinkRecords, j, records);
+                records.addAll(readRecords(topicsDir, getDirectory(tp.topic(), tp.partition()), tp, startOffset,
+                        extension, ZERO_PAD_FMT, S3_TEST_BUCKET_NAME, s3));
+//                assertEquals(size, records.size());
+//                verifyContents(sinkRecords, j, records);
                 j += size;
             }
         }
+        assertEquals(sinkRecords.size(), records.size());
+        verifyContents(sinkRecords, 0, records);
     }
 
     protected void verifyFileListing(long[] validOffsets, Set<TopicPartition> partitions, String extension) {
@@ -154,7 +195,13 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
             if (avroRecord instanceof Utf8) {
                 assertEquals(value, avroRecord.toString());
             } else {
-                assertEquals(value, avroRecord);
+                List<Field> fields = ((Struct) avroRecord).schema().fields();
+
+                for (Field field: fields) {
+                    Object expectedFldValue = ((GenericData.Record) value).get(field.name());
+                    Object actualFldValue = ((Struct) avroRecord).get(field.name());
+                    assertEquals(expectedFldValue, actualFldValue);
+                }
             }
         }
     }

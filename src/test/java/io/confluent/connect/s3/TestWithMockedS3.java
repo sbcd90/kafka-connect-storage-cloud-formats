@@ -55,8 +55,8 @@ public class TestWithMockedS3 extends S3SinkConnectorTestBase {
 
     @Override
     public void tearDown() throws Exception {
- //       super.tearDown();
- //       s3Mock.shutdown();
+        super.tearDown();
+        s3Mock.shutdown();
     }
 
     public static List<S3ObjectSummary> listObjects(String bucket, String prefix, AmazonS3 s3) {

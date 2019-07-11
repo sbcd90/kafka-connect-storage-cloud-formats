@@ -3,7 +3,6 @@ package io.confluent.connect.s3.format.orc;
 import io.confluent.connect.avro.AvroData;
 import io.confluent.connect.s3.S3SinkConnectorConfig;
 import io.confluent.connect.s3.storage.S3Storage;
-import io.confluent.connect.storage.common.StorageCommonConfig;
 import io.confluent.connect.storage.format.RecordWriter;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.hadoop.conf.Configuration;
@@ -39,6 +38,7 @@ public class OrcRecordWriter implements RecordWriter {
     private VectorizedRowBatch rowBatch;
     private List<ColumnVector> columnVectors;
     private TypeDescription orcSchema;
+    private org.apache.avro.Schema avroSchema;
 
     Schema schema = null;
     boolean committed = false;
@@ -57,26 +57,26 @@ public class OrcRecordWriter implements RecordWriter {
     @Override
     public void write(SinkRecord sinkRecord) {
         if (schema == null) {
-            schema = sinkRecord.valueSchema();
             try {
+                schema = sinkRecord.valueSchema();
+
                 log.info("Opening record writer for: {}", filename);
-                org.apache.avro.Schema avroSchema = avroData.fromConnectSchema(schema);
+                avroSchema = avroData.fromConnectSchema(schema);
                 this.initColumnVectors(avroSchema);
-
-                Object value = avroData.fromConnectData(schema, sinkRecord.value());
-                GenericRecord currRecord = (GenericRecord) value;
-
-                int row = rowBatch.size++;
-                this.fillColumnVectors(currRecord, avroSchema.getFields(), orcSchema, row);
-
-                if (rowBatch.size == rowBatch.getMaxSize()) {
-                    orcWriter.addRowBatch(rowBatch);
-                    rowBatch.reset();
-                }
-            } catch (IOException e) {
-                throw new ConnectException(e);
+            } catch (IOException ex) {
+                throw new ConnectException(ex);
             }
         }
+
+        Object value = avroData.fromConnectData(schema, sinkRecord.value());
+        GenericRecord currRecord = (GenericRecord) value;
+
+        int row = rowBatch.size++;
+        this.fillColumnVectors(currRecord, avroSchema.getFields(), orcSchema, row);
+
+//            if (rowBatch.size == rowBatch.getMaxSize()) {
+//                rowBatch.reset();
+//            }
     }
 
     private void initColumnVectors(org.apache.avro.Schema avroSchema) throws IOException {
@@ -88,11 +88,11 @@ public class OrcRecordWriter implements RecordWriter {
                 FileSystem s3FileSystem = this.getS3FileSystem(orcConfig, this.connectorConfig.getBucketName());
 
                 this.orcWriter = OrcFile.createWriter(new Path(filename),
-                        OrcFile.writerOptions(orcConfig).setSchema(orcSchema)
+                        OrcFile.writerOptions(orcConfig).overwrite(true).setSchema(orcSchema)
                                 .fileSystem(s3FileSystem));
             } catch (Exception ex) {
                 this.orcWriter = OrcFile.createWriter(new Path(filename),
-                        OrcFile.writerOptions(new Configuration()).setSchema(orcSchema)
+                        OrcFile.writerOptions(new Configuration()).overwrite(true).setSchema(orcSchema)
                                 .fileSystem(this.getLocalFileSystem(this.connectorConfig.originals()
                                         .get("mock.dir.path").toString())));
             }
@@ -255,6 +255,9 @@ public class OrcRecordWriter implements RecordWriter {
         try {
             committed = true;
             if (orcWriter != null) {
+                orcWriter.addRowBatch(rowBatch);
+                rowBatch.reset();
+
                 orcWriter.close();
                 orcWriter = null;
             }
