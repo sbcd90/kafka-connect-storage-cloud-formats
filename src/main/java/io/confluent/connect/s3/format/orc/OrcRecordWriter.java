@@ -112,6 +112,9 @@ public class OrcRecordWriter implements RecordWriter {
             org.apache.avro.Schema fieldSchema = fields.get(count).schema();
 //            List<org.apache.avro.Schema> typesOf = fieldSchema.getTypes();
             String typeOf = fieldSchema.getType().getName();
+            if (typeOf.equals("union")) {
+                typeOf = fieldSchema.getTypes().get(1).getType().getName();
+            }
 
             if (typeOf.equals("long")) {
                 orcFields.append(fieldName + ":" + "bigint");
