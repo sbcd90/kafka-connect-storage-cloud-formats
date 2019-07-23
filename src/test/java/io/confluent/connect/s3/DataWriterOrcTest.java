@@ -123,6 +123,58 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
         verify(sinkRecords, validOffsets);
     }
 
+    @Test
+    public void testWriteRecordsSpanningMultipleParts() throws Exception {
+        localProps.put(S3SinkConnectorConfig.FLUSH_SIZE_CONFIG, "10000");
+        setUp();
+
+        task = new S3SinkTask(connectorConfig, context, storage, partitioner, format, SYSTEM_TIME);
+
+        List<SinkRecord> sinkRecords = createRecords(11000);
+
+        // Perform write
+        task.put(sinkRecords);
+        task.close(context.assignment());
+        task.stop();
+
+        long[] validOffsets = new long[]{0, 10000};
+        verify(sinkRecords, validOffsets);
+    }
+
+    @Test
+    public void testWriteRecordsInMultiplePartitions() throws Exception {
+        setUp();
+        task = new S3SinkTask(connectorConfig, context, storage, partitioner, format, SYSTEM_TIME);
+
+        List<SinkRecord> sinkRecords = createRecords(7, 0, context.assignment());
+        // Perform write
+        task.put(sinkRecords);
+        task.close(context.assignment());
+        task.stop();
+
+        long[] validOffsets = new long[]{0, 3, 6};
+        verify(sinkRecords, validOffsets, context.assignment());
+    }
+
+    @Test
+    public void testWriteInterleavedRecordsInMultiplePartitions() throws Exception {
+        setUp();
+        task = new S3SinkTask(connectorConfig, context, storage, partitioner, format, SYSTEM_TIME);
+
+        List<SinkRecord> sinkRecords = createRecordsInterleaved(7, 0, context.assignment());
+        // Perform write
+        task.put(sinkRecords);
+        task.close(context.assignment());
+        task.stop();
+
+        long[] validOffsets = new long[]{0, 3, 6};
+        verify(sinkRecords, validOffsets, context.assignment());
+    }
+
+    protected void verify(List<SinkRecord> sinkRecords, long[] validOffsets, Set<TopicPartition> topicPartitions) throws IOException {
+        verify(sinkRecords, validOffsets, topicPartitions, false, this.extension);
+    }
+
     protected void verify(List<SinkRecord> sinkRecords, long[] validOffsets) throws IOException {
         verify(sinkRecords, validOffsets, Collections.singleton(new TopicPartition(TOPIC, PARTITION)),
                 false, this.extension);
@@ -219,6 +271,20 @@ public class DataWriterOrcTest extends TestWithMockedS3 {
                     startOffset, extension, ZERO_PAD_FMT));
         }
         return expectedFiles;
+    }
+
+    protected List<SinkRecord> createRecordsInterleaved(int size, long startOffset, Set<TopicPartition> topicPartitions) {
+        String key = "key";
+        Schema schema = createSchema();
+        Struct record = createRecord(schema);
+
+        List<SinkRecord> sinkRecords = new ArrayList<>();
+        for (long offset = startOffset; offset < (startOffset + size); offset++) {
+            for (TopicPartition partition: topicPartitions) {
+                sinkRecords.add(new SinkRecord(TOPIC, partition.partition(), Schema.STRING_SCHEMA, key, schema, record, offset));
+            }
+        }
+        return sinkRecords;
     }
 
     protected List<SinkRecord> createRecords(int size) {

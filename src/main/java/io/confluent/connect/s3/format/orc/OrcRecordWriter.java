@@ -97,7 +97,7 @@ public class OrcRecordWriter implements RecordWriter {
                                         .get("mock.dir.path").toString())));
             }
 
-            this.rowBatch = orcSchema.createRowBatch();
+            this.rowBatch = orcSchema.createRowBatch(11000);
             this.columnVectors = this.getColumnVectors(rowBatch, orcSchema,
                     orcSchema.getChildren().size());
         }
