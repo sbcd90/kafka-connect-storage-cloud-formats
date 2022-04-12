@@ -21,7 +21,7 @@
         <kafka.connect.version>5.2.0</kafka.connect.version>
         <kafka.version>2.2.0</kafka.version>
         <orc.version>1.5.5</orc.version>
-        <hadoop.version>3.2.0</hadoop.version>
+        <hadoop.version>3.2.3</hadoop.version>
         <nifi.version>1.9.2</nifi.version>
         <junit.version>4.12</junit.version>
         <easymock.version>4.0.2</easymock.version>
